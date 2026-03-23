@@ -1,16 +1,25 @@
 import 'package:flutter/material.dart';
+
 void main() {
   runApp(MyApp());
 }
+
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-        appBar: AppBar(
-          title: Text("KrakFlow"),
+        appBar: AppBar(title: Center(child: Text("KrakFlow"))),
+
+        body: Center(
+          child: Column(
+            children: [
+              Text("KrakFlow"),
+              Text("Organizacja studiów"),
+              Text("Dzisiejsze zadania"),
+            ],
+          ),
         ),
-        body: Text("Hello"),
       ),
     );
   }
