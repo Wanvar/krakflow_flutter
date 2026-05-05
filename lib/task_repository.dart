@@ -1,7 +1,7 @@
 class Task {
   final String title;
   final String deadline;
-  final bool done;
+  bool done;
   final Priority priority;
 
   Task({
@@ -23,6 +23,19 @@ Priority strToPriority(String str) {
       return Priority.High;
     default:
       return Priority.Low;
+  }
+}
+
+String priorityToStr(Priority priority) {
+  switch (priority) {
+    case Priority.Low:
+      return "niski";
+    case Priority.Medium:
+      return "średni";
+    case Priority.High:
+      return "wysoki";
+    default:
+      return "niski";
   }
 }
 
