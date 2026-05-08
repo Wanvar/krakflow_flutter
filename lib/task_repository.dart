@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class Task {
   final String title;
   final String deadline;
@@ -11,6 +13,7 @@ class Task {
     required this.priority,
   });
 }
+
 enum Priority { Low, Medium, High }
 
 Priority strToPriority(String str) {
@@ -39,7 +42,10 @@ String priorityToStr(Priority priority) {
   }
 }
 
+
+
 class TaskRepository {
+
   static List<Task> tasks = [
     Task(
       title: "nauka do kolokwium",
@@ -66,6 +72,5 @@ class TaskRepository {
       priority: Priority.High,
     ),
   ];
-
 
 }
