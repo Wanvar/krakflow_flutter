@@ -3,57 +3,65 @@ import 'task_repository.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'dart:math';
+import 'package:hive_ce_flutter/hive_flutter.dart';
+import '../models/task.dart';
+import '../services/task_api_service.dart';
+import '../services/task_sync_service.dart';
+import '../services/task_local_database.dart';
 
 //import '../models/task.dart';
 
-class TaskApiService {
-  VoidCallback? cal;
-  static const String baseUrl = "https://dummyjson.com";
+// class TaskApiService {
+//   VoidCallback? cal;
+//   static const String baseUrl = "https://dummyjson.com";
+//
+//   static Priority _getRandPriority(Random rand) {
+//     final priorities = ["niski", "średni", "wysoki"];
+//     return strToPriority(priorities[rand.nextInt(priorities.length)]);
+//   }
+//
+//   static String _getRandDeadline(Random rand) {
+//     final deadlines = [
+//       "dzisiaj",
+//       "jutro",
+//       "pojutrze",
+//       "w tym tygodniu",
+//       "w tym miesiącu",
+//       "za ponad miesiąc",
+//     ];
+//     return deadlines[rand.nextInt(deadlines.length)];
+//   }
+//
+//   static Future<List<Task>> fetchTasks() async {
+//     await Future.delayed(const Duration(seconds: 5)); //do testowania
+//     //throw Exception("test_error");
+//     final response = await http.get(Uri.parse("$baseUrl/todos"));
+//
+//     if (response.statusCode == 200) {
+//       final data = jsonDecode(response.body);
+//       final List todos = data["todos"];
+//       final random = Random();
+//
+//       return todos.map((todo) {
+//         return Task(
+//           title: todo["todo"],
+//           deadline: _getRandDeadline(random),
+//           // brak w API → mockujemy
+//           done: todo["completed"],
+//           priority: _getRandPriority(random),
+//           // brak w API → mockujemy
+//         );
+//       }).toList();
+//     } else {
+//       throw Exception("Błąd pobierania danych");
+//     }
+//   }
+// }
 
-  static Priority _getRandPriority(Random rand) {
-    final priorities = ["niski", "średni", "wysoki"];
-    return strToPriority(priorities[rand.nextInt(priorities.length)]);
-  }
-
-  static String _getRandDeadline(Random rand) {
-    final deadlines = [
-      "dzisiaj",
-      "jutro",
-      "pojutrze",
-      "w tym tygodniu",
-      "w tym miesiącu",
-      "za ponad miesiąc",
-    ];
-    return deadlines[rand.nextInt(deadlines.length)];
-  }
-
-  static Future<List<Task>> fetchTasks() async {
-    await Future.delayed(const Duration(seconds: 5)); //do testowania
-    //throw Exception("test_error");
-    final response = await http.get(Uri.parse("$baseUrl/todos"));
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final List todos = data["todos"];
-      final random = Random();
-
-      return todos.map((todo) {
-        return Task(
-          title: todo["todo"],
-          deadline: _getRandDeadline(random),
-          // brak w API → mockujemy
-          done: todo["completed"],
-          priority: _getRandPriority(random),
-          // brak w API → mockujemy
-        );
-      }).toList();
-    } else {
-      throw Exception("Błąd pobierania danych");
-    }
-  }
-}
-
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter(); // inicjalizacja
+  await Hive.openBox("tasks"); // otwarcie kontenera
   runApp(MyApp());
 }
 
@@ -74,25 +82,35 @@ class TaskView extends StatefulWidget {
 }
 
 class _TaskViewState extends State<TaskView> {
-
   String selectedFilter = "wszystkie";
   bool initialized = false;
   late Future<List<Task>> _tasksFuture;
 
+  // @override
+  // void initState() {
+  //   super.initState();
+  //
+  //   _tasksFuture = TaskApiService.fetchTasks();
+  // }
   @override
   void initState() {
     super.initState();
+    _tasksFuture = loadTasks();
+  }
 
-    _tasksFuture = TaskApiService.fetchTasks();
+  Future<List<Task>> loadTasks() async {
+    await TaskSyncService.loadInitialDataIfNeeded();
+    return TaskLocalDatabase.getTasks();
   }
 
   @override
   Widget build(BuildContext context) {
-    List<Task> filteredTasks = TaskRepository.tasks;
+    var database_tasks = TaskLocalDatabase.getTasks();
+    List<Task> filteredTasks = database_tasks;
     if (selectedFilter == "wykonane") {
-      filteredTasks = TaskRepository.tasks.where((task) => task.done).toList();
+      filteredTasks = database_tasks.where((task) => task.done).toList();
     } else if (selectedFilter == "do zrobienia") {
-      filteredTasks = TaskRepository.tasks.where((task) => !task.done).toList();
+      filteredTasks = database_tasks.where((task) => !task.done).toList();
     }
 
     return Scaffold(
@@ -118,7 +136,7 @@ class _TaskViewState extends State<TaskView> {
                       TextButton(
                         onPressed: () {
                           setState(() {
-                            TaskRepository.tasks
+                            database_tasks
                                 .clear(); // usuwa wszystkie elementy z listy
                           });
 
@@ -147,8 +165,8 @@ class _TaskViewState extends State<TaskView> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Masz dziś ${TaskRepository.tasks.length} zadania \n"
-              "Wykonano do tej pory ${TaskRepository.tasks.where((e) => e.done).length} zadania",
+              "Masz dziś ${database_tasks.length} zadania \n"
+              "Wykonano do tej pory ${database_tasks.where((e) => e.done).length} zadania",
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
@@ -263,7 +281,14 @@ class _TaskViewState extends State<TaskView> {
                     }
 
                     if (snapshot.hasData) {
-                      TaskRepository.tasks.addAll(snapshot.data!);
+                      //TaskRepository.tasks.addAll(snapshot.data!);
+                      var data = snapshot.data!;
+                      for(var item in data){
+                        addTask(item);
+                      }
+
+
+
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         initialized = true;
                         setState(() {}); //by odświeżyć liczniki zadań
@@ -288,7 +313,9 @@ class _TaskViewState extends State<TaskView> {
                         direction: DismissDirection.endToStart,
                         onDismissed: (direction) {
                           setState(() {
-                            TaskRepository.tasks.remove(task);
+                            //database_tasks.remove(task);
+                            TaskLocalDatabase.deleteTask(task.id);
+
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text("Zadanie ${task.title} usunięte"),
@@ -303,26 +330,35 @@ class _TaskViewState extends State<TaskView> {
                               subtitle:
                                   "termin: ${task.deadline} | priorytet: $priorityMsg",
                               done: task.done,
-                              onChanged: (value) {
+                              onChanged: (value) async {
+                                final updatedTask = Task(
+                                  id: task.id,
+                                  title: task.title,
+                                  deadline: task.deadline,
+                                  priority: task.priority,
+                                  done: value ?? false,
+                                );
+                                await TaskLocalDatabase.updateTask(updatedTask);
                                 setState(() {
-                                  task.done = value!;
+                                  _tasksFuture = loadTasks();
                                 });
                               },
-                              onTap: () async {
+
+                              onTap:  () async {
                                 final Task? updatedTask = await Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) =>
-                                        EditTaskScreen(taskToUpdate: task),
+                                    builder: (context) => EditTaskScreen(taskToUpdate: task),
                                   ),
                                 );
-                                // ważne! pamiętamy o setState() do odświeżenia ekranu i akcji podmiany taska na nowy edytowany
                                 if (updatedTask != null) {
+                                  await TaskLocalDatabase.updateTask(updatedTask);
                                   setState(() {
-                                    TaskRepository.tasks[index] = updatedTask;
+                                    _tasksFuture = loadTasks();
                                   });
                                 }
                               },
+
                             ),
                             SizedBox(height: 12),
                           ],
@@ -346,7 +382,8 @@ class _TaskViewState extends State<TaskView> {
               newTask.title.isNotEmpty &&
               newTask.deadline.isNotEmpty) {
             setState(() {
-              TaskRepository.tasks.add(newTask);
+              //TaskRepository.tasks.add(newTask);
+              addTask(newTask);
             });
           }
         },
@@ -354,7 +391,13 @@ class _TaskViewState extends State<TaskView> {
       ),
     );
   }
+
+  Future<void> addTask(Task task) async {
+    await TaskLocalDatabase.addTask(task);
+    await loadTasks();
+  }
 }
+
 
 class TaskCard extends StatelessWidget {
   final String title;
@@ -439,6 +482,7 @@ class AddTaskScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 final newTask = Task(
+                  id: DateTime.now().millisecondsSinceEpoch,
                   title: titleController.text,
                   deadline: deadlineController.text,
                   priority: strToPriority(priorityController.text),
@@ -504,6 +548,8 @@ class EditTaskScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 final newTask = Task(
+                  id: DateTime.now().millisecondsSinceEpoch,
+
                   title: titleController.text,
                   deadline: deadlineController.text,
                   priority: strToPriority(priorityController.text),
