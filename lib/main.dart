@@ -1,66 +1,13 @@
 import 'package:flutter/material.dart';
-import 'task_repository.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'dart:math';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import '../models/task.dart';
-import '../services/task_api_service.dart';
 import '../services/task_sync_service.dart';
 import '../services/task_local_database.dart';
-
-//import '../models/task.dart';
-
-// class TaskApiService {
-//   VoidCallback? cal;
-//   static const String baseUrl = "https://dummyjson.com";
-//
-//   static Priority _getRandPriority(Random rand) {
-//     final priorities = ["niski", "średni", "wysoki"];
-//     return strToPriority(priorities[rand.nextInt(priorities.length)]);
-//   }
-//
-//   static String _getRandDeadline(Random rand) {
-//     final deadlines = [
-//       "dzisiaj",
-//       "jutro",
-//       "pojutrze",
-//       "w tym tygodniu",
-//       "w tym miesiącu",
-//       "za ponad miesiąc",
-//     ];
-//     return deadlines[rand.nextInt(deadlines.length)];
-//   }
-//
-//   static Future<List<Task>> fetchTasks() async {
-//     await Future.delayed(const Duration(seconds: 5)); //do testowania
-//     //throw Exception("test_error");
-//     final response = await http.get(Uri.parse("$baseUrl/todos"));
-//
-//     if (response.statusCode == 200) {
-//       final data = jsonDecode(response.body);
-//       final List todos = data["todos"];
-//       final random = Random();
-//
-//       return todos.map((todo) {
-//         return Task(
-//           title: todo["todo"],
-//           deadline: _getRandDeadline(random),
-//           // brak w API → mockujemy
-//           done: todo["completed"],
-//           priority: _getRandPriority(random),
-//           // brak w API → mockujemy
-//         );
-//       }).toList();
-//     } else {
-//       throw Exception("Błąd pobierania danych");
-//     }
-//   }
-// }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter(); // inicjalizacja
+
   await Hive.openBox("tasks"); // otwarcie kontenera
   runApp(MyApp());
 }
@@ -68,8 +15,6 @@ void main() async {
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    // TODO: implement build
-
     return MaterialApp(title: "demo", home: TaskView());
   }
 }
@@ -83,36 +28,29 @@ class TaskView extends StatefulWidget {
 
 class _TaskViewState extends State<TaskView> {
   String selectedFilter = "wszystkie";
-  bool initialized = false;
+  (int allTasks, int doneTasks, int todoTasks) taskCounter = (0, 0, 0);
+  bool counterUpdated = false;
   late Future<List<Task>> _tasksFuture;
 
-  // @override
-  // void initState() {
-  //   super.initState();
-  //
-  //   _tasksFuture = TaskApiService.fetchTasks();
-  // }
   @override
   void initState() {
     super.initState();
     _tasksFuture = loadTasks();
   }
 
+
+
   Future<List<Task>> loadTasks() async {
     await TaskSyncService.loadInitialDataIfNeeded();
     return TaskLocalDatabase.getTasks();
   }
 
+  Future<List<Task>> loadTasksNoSync() async {
+    return TaskLocalDatabase.getTasks();
+  }
+
   @override
   Widget build(BuildContext context) {
-    var database_tasks = TaskLocalDatabase.getTasks();
-    List<Task> filteredTasks = database_tasks;
-    if (selectedFilter == "wykonane") {
-      filteredTasks = database_tasks.where((task) => task.done).toList();
-    } else if (selectedFilter == "do zrobienia") {
-      filteredTasks = database_tasks.where((task) => !task.done).toList();
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: Center(child: Text("Krakflow")),
@@ -134,10 +72,11 @@ class _TaskViewState extends State<TaskView> {
                         child: Text("Anuluj"),
                       ),
                       TextButton(
-                        onPressed: () {
+                        onPressed: () async {
+                          await TaskLocalDatabase.deleteAllTasks();
                           setState(() {
-                            database_tasks
-                                .clear(); // usuwa wszystkie elementy z listy
+                            _tasksFuture = loadTasksNoSync();
+                            taskCounter = (0,0,0);
                           });
 
                           Navigator.pop(context); // zamyka dialog
@@ -165,8 +104,9 @@ class _TaskViewState extends State<TaskView> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Masz dziś ${database_tasks.length} zadania \n"
-              "Wykonano do tej pory ${database_tasks.where((e) => e.done).length} zadania",
+              "Masz w sumie ${taskCounter.$1} zadań \n"
+              "Wykonano do tej pory ${taskCounter.$2} zadania \n"
+              "Masz do zrobienia ${taskCounter.$3} zadań \n",
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
@@ -262,65 +202,83 @@ class _TaskViewState extends State<TaskView> {
                 future: _tasksFuture,
 
                 builder: (context, snapshot) {
-                  if (!initialized) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    if (snapshot.hasError) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        initialized = true;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              "Nie udało się pobrać zdalnych zadań \n${snapshot.error}",
-                            ),
-                          ),
-                        );
-                      });
-                    }
-
-                    if (snapshot.hasData) {
-                      //TaskRepository.tasks.addAll(snapshot.data!);
-                      var data = snapshot.data!;
-                      for(var item in data){
-                        addTask(item);
-                      }
-
-
-
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        initialized = true;
-                        setState(() {}); //by odświeżyć liczniki zadań
-                      });
-                    }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
                   }
+
+                  if (snapshot.hasError) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            "Nie udało się pobrać zdalnych zadań \n${snapshot.error}",
+                          ),
+                        ),
+                      );
+                    });
+                  }
+
+
+                  final allTasks = snapshot.data!;
+
+                  if(!counterUpdated){
+                    int all = allTasks.length;
+                    int done = allTasks.where((task) => task.done).length;
+                    int todo= allTasks.where((task) => !task.done).length;
+
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      setState(() {
+                        counterUpdated = true;
+                        taskCounter = (all, done, todo);
+                      });
+                    });
+                  }
+
+                  List<Task> filteredTasks;
+
+                  if (selectedFilter == "wykonane") {
+                    filteredTasks = allTasks
+                        .where((task) => task.done)
+                        .toList();
+                  } else if (selectedFilter == "do zrobienia") {
+                    filteredTasks = allTasks
+                        .where((task) => !task.done)
+                        .toList();
+                  } else {
+                    filteredTasks = allTasks;
+                  }
+
+
 
                   return ListView.builder(
                     itemCount: filteredTasks.length,
                     itemBuilder: (context, index) {
                       final task = filteredTasks[index];
 
-                      var priorityMsg = switch (task.priority) {
-                        Priority.Low => 'niski',
-                        Priority.Medium => 'średni',
-                        Priority.High => 'wysoki',
-                        _ => 'nieznany',
-                      };
+                      // var priorityMsg = switch (task.priority) {
+                      //   Priority.Low => 'niski',
+                      //   Priority.Medium => 'średni',
+                      //   Priority.High => 'wysoki',
+                      //   _ => 'nieznany',
+                      // };
 
                       return Dismissible(
                         key: ValueKey(task.title),
                         direction: DismissDirection.endToStart,
-                        onDismissed: (direction) {
+                        onDismissed: (direction) async {
+                          await TaskLocalDatabase.deleteTask(task.id);
                           setState(() {
                             //database_tasks.remove(task);
-                            TaskLocalDatabase.deleteTask(task.id);
 
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text("Zadanie ${task.title} usunięte"),
                               ),
                             );
+
+                            _tasksFuture = loadTasksNoSync();
+                            counterUpdated = false;
+
                           });
                         },
                         child: Column(
@@ -328,7 +286,7 @@ class _TaskViewState extends State<TaskView> {
                             TaskCard(
                               title: task.title,
                               subtitle:
-                                  "termin: ${task.deadline} | priorytet: $priorityMsg",
+                                  "termin: ${task.deadline} | priorytet: ${task.priority}",
                               done: task.done,
                               onChanged: (value) async {
                                 final updatedTask = Task(
@@ -340,25 +298,28 @@ class _TaskViewState extends State<TaskView> {
                                 );
                                 await TaskLocalDatabase.updateTask(updatedTask);
                                 setState(() {
-                                  _tasksFuture = loadTasks();
+                                  _tasksFuture = loadTasksNoSync();
+                                  counterUpdated = false;
                                 });
                               },
 
-                              onTap:  () async {
+                              onTap: () async {
                                 final Task? updatedTask = await Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => EditTaskScreen(taskToUpdate: task),
+                                    builder: (context) =>
+                                        EditTaskScreen(taskToUpdate: task),
                                   ),
                                 );
                                 if (updatedTask != null) {
-                                  await TaskLocalDatabase.updateTask(updatedTask);
+                                  await TaskLocalDatabase.updateTask(
+                                    updatedTask,
+                                  );
                                   setState(() {
-                                    _tasksFuture = loadTasks();
+                                    _tasksFuture = loadTasksNoSync();
                                   });
                                 }
                               },
-
                             ),
                             SizedBox(height: 12),
                           ],
@@ -378,12 +339,16 @@ class _TaskViewState extends State<TaskView> {
             context,
             MaterialPageRoute(builder: (context) => AddTaskScreen()),
           );
+
+          // UWAGA: upewnij się przy testowaniu, że wypełniłeś i tytuł i termin!
           if (newTask != null &&
               newTask.title.isNotEmpty &&
               newTask.deadline.isNotEmpty) {
+            await TaskLocalDatabase.addTask(newTask);
+
             setState(() {
-              //TaskRepository.tasks.add(newTask);
-              addTask(newTask);
+              _tasksFuture = loadTasksNoSync();
+              counterUpdated = false;
             });
           }
         },
@@ -397,7 +362,6 @@ class _TaskViewState extends State<TaskView> {
     await loadTasks();
   }
 }
-
 
 class TaskCard extends StatelessWidget {
   final String title;
@@ -445,7 +409,7 @@ class AddTaskScreen extends StatelessWidget {
   final TextEditingController deadlineController = TextEditingController();
   final TextEditingController priorityController = TextEditingController();
 
-  // controller dla priorytetu
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -482,10 +446,11 @@ class AddTaskScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 final newTask = Task(
-                  id: DateTime.now().millisecondsSinceEpoch,
+                  id: (DateTime.now().millisecondsSinceEpoch).toUnsigned(32),
+                  //klucz musi pasować do uint32
                   title: titleController.text,
                   deadline: deadlineController.text,
-                  priority: strToPriority(priorityController.text),
+                  priority: priorityController.text,
                   done: false,
                 );
                 Navigator.pop(context, newTask);
@@ -508,7 +473,7 @@ class EditTaskScreen extends StatelessWidget {
   EditTaskScreen({super.key, required this.taskToUpdate}) {
     titleController.text = taskToUpdate.title;
     deadlineController.text = taskToUpdate.deadline;
-    priorityController.text = priorityToStr(taskToUpdate.priority);
+    priorityController.text = taskToUpdate.priority;
   }
 
   // controller dla priorytetu
@@ -548,11 +513,11 @@ class EditTaskScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 final newTask = Task(
-                  id: DateTime.now().millisecondsSinceEpoch,
+                  id: taskToUpdate.id,
 
                   title: titleController.text,
                   deadline: deadlineController.text,
-                  priority: strToPriority(priorityController.text),
+                  priority: priorityController.text,
                   done: taskToUpdate.done,
                 );
                 Navigator.pop(context, newTask);

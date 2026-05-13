@@ -4,9 +4,9 @@ import 'dart:math';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-Priority _getRandPriority(Random rand) {
+String _getRandPriority(Random rand) {
   final priorities = ["niski", "średni", "wysoki"];
-  return strToPriority(priorities[rand.nextInt(priorities.length)]);
+  return priorities[rand.nextInt(priorities.length)];
 }
 
 String _getRandDeadline(Random rand) {
