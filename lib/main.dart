@@ -340,7 +340,7 @@ class _TaskViewState extends State<TaskView> {
             MaterialPageRoute(builder: (context) => AddTaskScreen()),
           );
 
-          // UWAGA: upewnij się przy testowaniu, że wypełniłeś i tytuł i termin!
+
           if (newTask != null &&
               newTask.title.isNotEmpty &&
               newTask.deadline.isNotEmpty) {
