@@ -25,11 +25,11 @@ String _getRandDeadline(Random rand) {
 class TaskApiService {
   static const String baseUrl = "https://dummyjson.com";
   static Future<List<Task>> fetchTasks() async {
-    log("$baseUrl/todos", name: "api service");
+    log("url zapytania: $baseUrl/todos", name: "api service");
     final response = await http.get(
       Uri.parse("$baseUrl/todos"),
     );
-    log(response.statusCode.toString(),  name: "api service");
+    log("status odpowiedzi: ${response.statusCode.toString()}",  name: "api service");
     if (response.statusCode == 200) {
       Random rand = Random();
       final data = jsonDecode(response.body);
@@ -43,10 +43,10 @@ class TaskApiService {
           priority: _getRandPriority(rand)
         );
       }).toList();
-      log(ret.length.toString(), name: "api service");
+      log("ilość probranych zadań: ${ret.length.toString()}", name: "api service");
       return ret;
     } else {
-      log("błąd odpowiedzi kod:${response.statusCode}",error: "http", name: "api service");
+      log("błąd odpowiedzi, kod:${response.statusCode}",error: "http", name: "api service");
       throw Exception("Błąd pobierania danych");
     }
   }
